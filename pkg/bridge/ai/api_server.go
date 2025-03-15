@@ -31,7 +31,7 @@ const (
 
 var (
 	// RequestTimeout is the timeout for the request, default is 90 seconds
-	RequestTimeout = 90 * time.Second
+	RequestTimeout = 300 * time.Second
 	//  RunFunctionTimeout is the timeout for awaiting the function response, default is 60 seconds
 	RunFunctionTimeout = 60 * time.Second
 )

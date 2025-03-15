@@ -44,6 +44,7 @@ import (
 	"github.com/yomorun/yomo/pkg/bridge/ai/provider/vertexai"
 	"github.com/yomorun/yomo/pkg/bridge/ai/provider/vllm"
 	"github.com/yomorun/yomo/pkg/bridge/ai/provider/xai"
+	"github.com/yomorun/yomo/pkg/bridge/ai/provider/zxy"
 )
 
 // serveCmd represents the serve command
@@ -188,6 +189,8 @@ func registerAIProvider(aiConfig *ai.Config) error {
 			providerpkg.RegisterProvider(deepseek.NewProvider(provider["api_key"], provider["model"]))
 		case "vllm":
 			providerpkg.RegisterProvider(vllm.NewProvider(provider["api_endpoint"], provider["api_key"], provider["model"]))
+		case "zxy":
+			providerpkg.RegisterProvider(zxy.NewProvider(provider["api_endpoint"], provider["api_key"]))
 		default:
 			log.WarningStatusEvent(os.Stdout, "unknown provider: %s", name)
 		}

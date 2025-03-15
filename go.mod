@@ -116,3 +116,7 @@ require (
 	google.golang.org/protobuf v1.36.4 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+// https://github.com/goodenough227/go-openai/tree/master
+// https://github.com/sashabaranov/go-openai/pull/925
+replace github.com/sashabaranov/go-openai => ../../go-openai
