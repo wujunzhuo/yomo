@@ -1,11 +1,10 @@
 use anyhow::Result;
-use log::debug;
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::metadata::SfnMetadata;
-
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type", content = "content")]
 pub(crate) enum Frame {
     Handshake { payload: HandshakePayload },
     HandshakeAck { payload: HandshakeAckPayload },
@@ -15,7 +14,7 @@ pub(crate) enum Frame {
 pub(crate) struct HandshakePayload {
     pub(crate) sfn_name: String,
     pub(crate) credential: Option<String>,
-    pub(crate) metadata: SfnMetadata,
+    pub(crate) metadata: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -29,7 +28,8 @@ pub(crate) async fn read_frame(reader: &mut (impl AsyncReadExt + Unpin)) -> Resu
     let mut data = vec![0; length as usize];
     reader.read_exact(&mut data).await?;
     let f: Frame = serde_json::from_slice(&data)?;
-    debug!("frame: {:?}", f);
+    debug!("read frame: {:?}", f);
+    trace!("read frame raw: {}", String::from_utf8_lossy(&data));
     Ok(f)
 }
 
@@ -40,5 +40,7 @@ pub(crate) async fn write_frame(
     let data = serde_json::to_vec(frame)?;
     writer.write_u32(data.len() as u32).await?;
     writer.write_all(&data).await?;
+    debug!("write frame: {:?}", frame);
+    trace!("write frame raw: {}", String::from_utf8_lossy(&data));
     Ok(())
 }
