@@ -25,7 +25,7 @@ use yomo::{
     router::RouterImpl,
     serverless::{ServerlessHandler, ServerlessMemoryBridge},
     tls::TlsConfig,
-    tool_api::build_tool_api,
+    tool_router::build_tool_api,
     tool_mgr::ToolMgrImpl,
     zipper::{MemorySource, Zipper, ZipperBridge},
     trace::init_tracing,
