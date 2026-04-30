@@ -16,7 +16,7 @@ pub mod io;
 /// LLM-facing HTTP routers.
 pub mod llm_router;
 /// LLM provider abstractions.
-pub mod llm_providers;
+pub mod llm_provider;
 /// Manage user-defined metadata extension.
 pub mod metadata_mgr;
 /// Routing traits and implementations.
@@ -48,3 +48,7 @@ pub mod openai_http_mapping;
 pub mod trace;
 /// Server configuration used by the CLI.
 pub mod serve_config;
+/// Model API router.
+pub mod model_api_router;
+/// Model API providers.
+pub mod model_api_provider;
