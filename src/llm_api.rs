@@ -207,7 +207,7 @@ where
     }
 }
 
-pub async fn build_llm_router(
+pub async fn build_llm_api(
     tool_mgr: Arc<dyn ToolMgr<(), ()>>,
     provider_registry: ProviderRegistry<()>,
     tool_invoker: Arc<dyn ToolInvoker>,

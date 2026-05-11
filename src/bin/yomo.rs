@@ -18,18 +18,18 @@ use yomo::{
     bridge::Bridge,
     client::Client,
     connector::MemoryConnector,
+    llm_api::build_llm_api,
     llm_provider,
-    llm_router::build_llm_router,
     metadata_mgr::MetadataMgrImpl,
+    model_api::build_model_api,
     model_api_provider,
-    model_api_router::build_model_api_router,
     router::RouterImpl,
     serve_config::ServeConfig,
     serverless::{ServerlessHandler, ServerlessLanguage, ServerlessMemoryBridge},
     tls::TlsConfig,
     tool_invoker::ConnToolInvoker,
     tool_mgr::ToolMgrImpl,
-    tool_router::build_tool_api,
+    tool_api::build_tool_api,
     trace::init_tracing,
     zipper::{MemorySource, Zipper, ZipperBridge},
 };
@@ -192,7 +192,7 @@ async fn serve(opt: ServeOptions) -> Result<()> {
         let tool_invoker = Arc::new(ConnToolInvoker::new(Arc::new(connector.to_owned())));
         app = app.nest(
             "/v1",
-            build_llm_router(tool_mgr, provider_registry, tool_invoker).await?,
+            build_llm_api(tool_mgr, provider_registry, tool_invoker).await?,
         );
     }
 
@@ -215,7 +215,7 @@ async fn serve(opt: ServeOptions) -> Result<()> {
         let model_api_usage_handler = Arc::new(model_api_provider::NoopUsageHandler::default());
         app = app.nest(
             "/v1",
-            build_model_api_router(model_api_registry, model_api_usage_handler).await?,
+            build_model_api(model_api_registry, model_api_usage_handler).await?,
         );
     }
 

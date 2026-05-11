@@ -332,7 +332,7 @@ fn resolve_endpoint_kind(endpoint: &str) -> Option<EndpointKind> {
     }
 }
 
-pub async fn build_model_api_router(
+pub async fn build_model_api(
     provider_registry: ProviderRegistry<()>,
     usage_handler: std::sync::Arc<dyn UsageHandler<()>>,
 ) -> anyhow::Result<axum::Router> {

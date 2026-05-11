@@ -13,8 +13,8 @@ pub mod client;
 pub mod connector;
 /// Framed IO helpers.
 pub mod io;
-/// LLM-facing HTTP routers.
-pub mod llm_router;
+/// LLM-facing HTTP APIs.
+pub mod llm_api;
 /// LLM provider abstractions.
 pub mod llm_provider;
 /// Manage user-defined metadata extension.
@@ -26,7 +26,7 @@ pub mod serverless;
 /// TLS configuration helpers.
 pub mod tls;
 /// Tool-facing HTTP APIs.
-pub mod tool_router;
+pub mod tool_api;
 /// Tool manager trait and implementation.
 pub mod tool_mgr;
 /// Shared protocol types.
@@ -48,7 +48,7 @@ pub mod openai_http_mapping;
 pub mod trace;
 /// Server configuration used by the CLI.
 pub mod serve_config;
-/// Model API router.
-pub mod model_api_router;
+/// Model API HTTP APIs.
+pub mod model_api;
 /// Model API providers.
 pub mod model_api_provider;

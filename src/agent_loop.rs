@@ -574,7 +574,7 @@ where
         let parent_cx = parent_cx.clone();
         tokio::task::spawn(async move {
             let _enter = parent_span.enter();
-            let tracer = global::tracer("llm_router");
+            let tracer = global::tracer("llm_api");
             let tool_name = call.name.clone();
             let mut span = tracer.start_with_context(tool_name.clone(), &parent_cx);
             span.set_attribute(KeyValue::new("tool_name", tool_name));
