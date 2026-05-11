@@ -118,11 +118,11 @@ where
     } else {
         Some(request.model.clone())
     };
-    let (selection, provider_entry) = match state
+    let provider_entry = match state
         .provider_registry
         .select(request_model_id.as_deref(), &metadata)
     {
-        Ok(selection) => selection,
+        Ok(provider_entry) => provider_entry,
         Err(SelectionError::ModelNotSupported) => {
             let model = request_model_id.as_deref().unwrap_or("");
             let message = format!("model {model} is not supported");
@@ -134,7 +134,7 @@ where
         }
     };
 
-    request.model = selection.model_id.clone();
+    request.model = provider_entry.model_id.clone();
     let stream = request.stream.unwrap_or(false);
     if stream {
         match &mut request.stream_options {
@@ -151,7 +151,7 @@ where
     }
     info!(
         "http.request.start; method=POST path=/v1/chat/completion model_id={} stream={} trace_id={} metadata={:?}",
-        request_model_id.as_deref().unwrap_or(&selection.model_id),
+        request_model_id.as_deref().unwrap_or(&provider_entry.model_id),
         stream,
         trace_id,
         metadata
@@ -159,7 +159,7 @@ where
     if let Err(message) = validate_openai_request(&request) {
         error!(
             "chat request invalid: model_id={}, error={} {:?}",
-            request_model_id.as_deref().unwrap_or(&selection.model_id),
+            request_model_id.as_deref().unwrap_or(&provider_entry.model_id),
             message,
             metadata
         );
@@ -170,7 +170,7 @@ where
         ));
     }
 
-    let model_id = selection.model_id.clone();
+    let model_id = provider_entry.model_id.clone();
     let loop_result = run_agent_loop::<A, M>(
         provider_entry.provider,
         request,

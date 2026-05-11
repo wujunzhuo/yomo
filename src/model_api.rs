@@ -105,12 +105,11 @@ where
         }
     };
 
-    let (selection, provider_entry) =
-        match state
-            .provider_registry
-            .select(endpoint_path, requested_model.as_deref(), &metadata)
-        {
-            Ok(selection) => selection,
+    let provider_entry = match state
+        .provider_registry
+        .select(endpoint_path, requested_model.as_deref(), &metadata)
+    {
+        Ok(provider_entry) => provider_entry,
             Err(SelectionError::ModelNotSupported) => {
                 let model = requested_model.as_deref().unwrap_or("");
                 let message = if model.is_empty() {
@@ -128,7 +127,7 @@ where
 
     info!(
         "http.request.start; method=POST path=/v1{} model_id={} stream={} trace_id={} metadata={:?}",
-        endpoint_path, selection.model_id, is_stream, trace_id, metadata
+        endpoint_path, provider_entry.model_id, is_stream, trace_id, metadata
     );
 
     let proxy_request = ProxyRequest {
@@ -150,7 +149,7 @@ where
         Err(err) => {
             error!(
                 "http.request.end; status_code=502 model_id={} error={} trace_id={} metadata={:?}",
-                selection.model_id, err, trace_id, metadata
+                provider_entry.model_id, err, trace_id, metadata
             );
             return Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
@@ -172,10 +171,10 @@ where
                 if let Ok(usage_value) = serde_json::to_value(usage) {
                     let usage_handler = std::sync::Arc::clone(&state.usage_handler);
                     let endpoint = endpoint_path.to_string();
-                    let model_id = selection.model_id.clone();
-                    let trace_id = trace_id.clone();
-                    let status_code = response.status.as_u16();
-                    let metadata = metadata.clone();
+                        let model_id = provider_entry.model_id.clone();
+                        let trace_id = trace_id.clone();
+                        let status_code = response.status.as_u16();
+                        let metadata = metadata.clone();
                     let request_id = request_id.clone();
                     tokio::spawn(async move {
                         usage_handler
@@ -202,7 +201,7 @@ where
     info!(
         "http.request.end; status_code={} model_id={} trace_id={} metadata={:?}",
         response.status().as_u16(),
-        selection.model_id,
+        provider_entry.model_id,
         trace_id,
         metadata
     );

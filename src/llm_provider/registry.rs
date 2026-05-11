@@ -78,10 +78,7 @@ impl<M> ProviderRegistry<M> {
         &self,
         model_id: Option<&str>,
         metadata: &M,
-    ) -> Result<
-        (crate::llm_provider::selection::SelectionResult, ProviderEntry),
-        crate::llm_provider::selection::SelectionError,
-    > {
+    ) -> Result<ProviderEntry, crate::llm_provider::selection::SelectionError> {
         let selected = self
             .strategy
             .select(model_id, metadata)
@@ -95,7 +92,7 @@ impl<M> ProviderRegistry<M> {
             })
             .cloned()
             .ok_or(crate::llm_provider::selection::SelectionError::ModelNotSupported)?;
-        Ok((selected, provider))
+        Ok(provider)
     }
 
     pub fn providers(&self) -> &HashMap<String, ProviderEntry> {

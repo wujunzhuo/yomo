@@ -43,7 +43,7 @@ impl<M> ProviderRegistry<M> {
         endpoint: &str,
         model_id: Option<&str>,
         metadata: &M,
-    ) -> Result<(SelectionResult, ProviderEntry), SelectionError> {
+    ) -> Result<ProviderEntry, SelectionError> {
         let selected = self
             .strategy
             .select(endpoint, model_id, metadata)
@@ -61,7 +61,7 @@ impl<M> ProviderRegistry<M> {
                     .cloned()
             })
             .ok_or(SelectionError::ModelNotSupported)?;
-        Ok((selected, provider))
+        Ok(provider)
     }
 
     pub fn endpoint(&self, path: &str) -> Option<&ModelApiEndpointConfig> {
