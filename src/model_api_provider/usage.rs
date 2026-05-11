@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -156,34 +155,4 @@ pub struct ImagesOutputTokensDetails {
 #[derive(Debug, Clone, Serialize)]
 pub struct UnknownUsage {
     pub raw: Value,
-}
-
-#[async_trait]
-pub trait UsageHandler<M>: Send + Sync {
-    async fn on_usage(
-        &self,
-        endpoint: &str,
-        model_id: &str,
-        trace_id: &str,
-        status_code: u16,
-        metadata: M,
-        usage: Usage,
-    );
-}
-
-#[derive(Clone, Default)]
-pub struct NoopUsageHandler;
-
-#[async_trait]
-impl<M: Send + Sync + 'static> UsageHandler<M> for NoopUsageHandler {
-    async fn on_usage(
-        &self,
-        _endpoint: &str,
-        _model_id: &str,
-        _trace_id: &str,
-        _status_code: u16,
-        _metadata: M,
-        _usage: Usage,
-    ) {
-    }
 }

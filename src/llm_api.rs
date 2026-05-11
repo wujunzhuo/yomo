@@ -30,6 +30,7 @@ pub struct LlmHandlerState<A, M> {
     pub tool_mgr: Arc<dyn ToolMgr<A, M>>,
     pub tool_invoker: Arc<dyn ToolInvoker>,
     pub metadata_mgr: Arc<dyn MetadataMgr<A, M>>,
+    pub agent_loop_config: AgentLoopConfig<M>,
 }
 
 pub async fn handle_chat_completions<A, M>(
@@ -98,6 +99,20 @@ where
         .await
         .map_err(|err| anyhow::anyhow!("tool manager error: {err}"))?;
 
+    if let Err(err) = state
+        .agent_loop_config
+        .preprocessor
+        .preprocess(&trace_id, &metadata, &mut request)
+        .await
+    {
+        error!("request preprocess failed: {err}");
+        return Ok(openai_error_response(
+            StatusCode::BAD_REQUEST,
+            &err.to_string(),
+            Some("invalid_request_error"),
+        ));
+    }
+
     let request_model_id = if request.model.trim().is_empty() {
         None
     } else {
@@ -163,7 +178,7 @@ where
         state.tool_invoker.clone(),
         metadata.clone(),
         trace_id.clone(),
-        AgentLoopConfig::default(),
+        state.agent_loop_config.clone(),
     )
     .await;
 
@@ -211,12 +226,14 @@ pub async fn build_llm_api(
     tool_mgr: Arc<dyn ToolMgr<(), ()>>,
     provider_registry: ProviderRegistry<()>,
     tool_invoker: Arc<dyn ToolInvoker>,
+    agent_loop_config: AgentLoopConfig<()>,
 ) -> anyhow::Result<Router> {
     let state = LlmHandlerState {
         provider_registry: Arc::new(provider_registry),
         tool_mgr,
         tool_invoker,
         metadata_mgr: Arc::new(crate::metadata_mgr::MetadataMgrImpl::new()),
+        agent_loop_config,
     };
 
     let app = axum::Router::new()

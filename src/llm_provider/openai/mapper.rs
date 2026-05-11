@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde_json;
+
 use crate::openai_types::{
     ChatCompletionChunk, ChatCompletionChunkToolCall, ChatCompletionChunkToolCallFunction,
     Content as OpenAIContent, ContentPart, Usage as OpenAIUsage,
@@ -48,6 +50,7 @@ pub fn map_response(
             total_tokens: 0,
             cached_tokens: None,
             reasoning_tokens: None,
+            raw: None,
         });
 
     Ok(UnifiedResponse {
@@ -131,6 +134,7 @@ pub fn map_stream_chunk(
             total_tokens: 0,
             cached_tokens: None,
             reasoning_tokens: None,
+            raw: None,
         });
 
         if finish_reason_value == "tool_calls" {
@@ -186,6 +190,7 @@ pub fn map_usage_to_provider(usage: &OpenAIUsage) -> Usage {
         total_tokens: usage.total_tokens,
         cached_tokens: usage.cached_tokens,
         reasoning_tokens: usage.reasoning_tokens,
+        raw: serde_json::to_value(usage).ok(),
     }
 }
 

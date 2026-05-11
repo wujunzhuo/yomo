@@ -192,7 +192,13 @@ async fn serve(opt: ServeOptions) -> Result<()> {
         let tool_invoker = Arc::new(ConnToolInvoker::new(Arc::new(connector.to_owned())));
         app = app.nest(
             "/v1",
-            build_llm_api(tool_mgr, provider_registry, tool_invoker).await?,
+            build_llm_api(
+                tool_mgr,
+                provider_registry,
+                tool_invoker,
+                yomo::agent_loop::AgentLoopConfig::<()>::default(),
+            )
+            .await?,
         );
     }
 

@@ -11,8 +11,10 @@ use log::{error, info};
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::trace::{Span as OtelSpan, Status, Tracer};
+use axum::http::StatusCode;
 use serde::Serialize;
 use serde_json::Value;
+use serde_json;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -21,14 +23,64 @@ use crate::llm_provider::{
     Provider, ProviderError, ToolCall as ProviderToolCall, UnifiedEvent, UnifiedResponse, Usage,
 };
 use crate::openai_types::{ChatCompletionRequest, Content, Message, Role, ToolDefinition};
+use async_trait::async_trait;
+use crate::usage_handler::{NoopUsageHandler, UsageHandler};
 
-pub struct AgentLoopConfig {
+#[derive(Clone)]
+pub struct AgentLoopConfig<M> {
     pub max_calls: usize,
+    pub usage_handler: Arc<dyn UsageHandler<M>>,
+    pub preprocessor: Arc<dyn RequestPreprocessor<M>>,
 }
 
-impl Default for AgentLoopConfig {
+impl<M> Default for AgentLoopConfig<M>
+where
+    M: Send + Sync + 'static,
+{
     fn default() -> Self {
-        Self { max_calls: 14 }
+        Self {
+            max_calls: 14,
+            usage_handler: Arc::new(NoopUsageHandler::default()),
+            preprocessor: Arc::new(NoopRequestPreprocessor::default()),
+        }
+    }
+}
+
+impl<M> AgentLoopConfig<M> {
+    pub fn handle_usage(&self, raw_usage: Option<Value>, usage: Usage) -> Usage {
+        let mut usage = usage;
+        if usage.raw.is_none() {
+            usage.raw = raw_usage;
+        }
+        usage
+    }
+}
+
+#[async_trait]
+pub trait RequestPreprocessor<M>: Send + Sync {
+    async fn preprocess(
+        &self,
+        trace_id: &str,
+        metadata: &M,
+        request: &mut ChatCompletionRequest,
+    ) -> anyhow::Result<()>;
+}
+
+#[derive(Clone, Default)]
+pub struct NoopRequestPreprocessor;
+
+#[async_trait]
+impl<M> RequestPreprocessor<M> for NoopRequestPreprocessor
+where
+    M: Send + Sync + 'static,
+{
+    async fn preprocess(
+        &self,
+        _trace_id: &str,
+        _metadata: &M,
+        _request: &mut ChatCompletionRequest,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
@@ -57,11 +109,11 @@ pub async fn run_agent_loop<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: M,
     trace_id: String,
-    config: AgentLoopConfig,
+    config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
     A: Send + Sync + 'static,
-    M: fmt::Debug + Serialize + Send + Sync + 'static,
+    M: fmt::Debug + Clone + Serialize + Send + Sync + 'static,
 {
     let server_tools = Arc::new(server_tools);
     let metadata = Arc::new(metadata);
@@ -97,11 +149,11 @@ async fn run_agent_loop_nonstream<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: Arc<M>,
     trace_id: String,
-    config: AgentLoopConfig,
+    config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
     A: Send + Sync + 'static,
-    M: fmt::Debug + Serialize + Send + Sync + 'static,
+    M: fmt::Debug + Clone + Serialize + Send + Sync + 'static,
 {
     let mut call_count = 0usize;
     let mut total_usage = Usage {
@@ -110,6 +162,7 @@ where
         total_tokens: 0,
         cached_tokens: None,
         reasoning_tokens: None,
+        raw: None,
     };
     loop {
         let tool_maps = build_tool_maps(&request, server_tools.as_ref())?;
@@ -122,6 +175,26 @@ where
             .complete(request.clone())
             .await
             .map_err(|err| ProviderError::Internal(err.to_string()))?;
+        response.usage = config.handle_usage(response.usage.raw.clone(), response.usage);
+        let usage_handler = Arc::clone(&config.usage_handler);
+        let model_id = response.model.clone();
+        let request_id = response.request_id.clone();
+        let usage_trace_id = trace_id.clone();
+        let metadata_value = (*metadata).clone();
+        let usage = usage_to_value(&response.usage);
+        tokio::spawn(async move {
+            usage_handler
+                .on_usage(
+                    "/chat/completions",
+                    &model_id,
+                    &request_id,
+                    &usage_trace_id,
+                    StatusCode::OK.as_u16(),
+                    metadata_value,
+                    usage,
+                )
+                .await;
+        });
         add_usage(&mut total_usage, &response.usage);
         call_count += 1;
 
@@ -190,11 +263,11 @@ async fn run_agent_loop_stream<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: Arc<M>,
     trace_id: String,
-    config: AgentLoopConfig,
+    config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
     A: Send + Sync + 'static,
-    M: fmt::Debug + Serialize + Send + Sync + 'static,
+    M: fmt::Debug + Clone + Serialize + Send + Sync + 'static,
 {
     let stream = async_stream::try_stream! {
         let mut call_count = 0usize;
@@ -204,6 +277,7 @@ where
             total_tokens: 0,
             cached_tokens: None,
             reasoning_tokens: None,
+            raw: None,
         };
         let mut last_finish_reason: Option<String> = None;
         let model_id = request.model.clone();
@@ -224,10 +298,18 @@ where
             let mut finish_reason = None;
             let mut saw_tool_call = false;
             let mut emitted_client_tool = false;
+            let mut request_id: Option<String> = None;
 
             while let Some(item) = provider_stream.next().await {
                 let event = item?;
                 match &event {
+                    UnifiedEvent::ResponseCreated { id, .. }
+                    | UnifiedEvent::ResponseInProgress { id, .. }
+                    | UnifiedEvent::MessageStart { id, .. }
+                    | UnifiedEvent::MessageDelta { id, .. }
+                    | UnifiedEvent::MessageStop { id, .. } => {
+                        request_id = Some(id.clone());
+                    }
                     UnifiedEvent::ToolCallDelta { id, name, arguments_delta } => {
                         saw_tool_call = true;
                         let index = *tool_call_index.entry(id.clone()).or_insert_with(|| {
@@ -305,13 +387,13 @@ where
                         }
                     }
                     UnifiedEvent::Usage { usage: chunk_usage } => {
-                        usage = Some(chunk_usage.clone());
+                        usage = Some(config.handle_usage(chunk_usage.raw.clone(), chunk_usage.clone()));
                     }
                     UnifiedEvent::Completed { finish_reason: reason, usage: chunk_usage } => {
                         finish_reason = reason.clone();
                         last_finish_reason = reason.clone();
                         if let Some(chunk_usage) = chunk_usage {
-                            usage = Some(chunk_usage.clone());
+                            usage = Some(config.handle_usage(chunk_usage.raw.clone(), chunk_usage.clone()));
                         }
                     }
                     _ => {}
@@ -320,12 +402,18 @@ where
                 if !saw_tool_call {
                     match event {
                         UnifiedEvent::Usage { usage: chunk_usage } => {
-                            let usage = add_usage_cloned(&usage_offset, &chunk_usage);
+                            let processed_usage =
+                                config.handle_usage(chunk_usage.raw.clone(), chunk_usage.clone());
+                            let usage = add_usage_cloned(&usage_offset, &processed_usage);
                             yield UnifiedEvent::Usage { usage };
                         }
                         UnifiedEvent::Completed { finish_reason, usage: chunk_usage } => {
                             let usage = chunk_usage.map(|chunk_usage| {
-                                add_usage_cloned(&usage_offset, &chunk_usage)
+                                let processed_usage = config.handle_usage(
+                                    chunk_usage.raw.clone(),
+                                    chunk_usage,
+                                );
+                                add_usage_cloned(&usage_offset, &processed_usage)
                             });
                             yield UnifiedEvent::Completed { finish_reason, usage };
                         }
@@ -338,6 +426,25 @@ where
 
             call_count += 1;
             if let Some(current_usage) = &usage {
+                let usage_handler = Arc::clone(&config.usage_handler);
+                let model_id = model_id.clone();
+                let request_id = request_id.clone().unwrap_or_default();
+                let trace_id = trace_id.clone();
+                let metadata = (*metadata).clone();
+                let usage = usage_to_value(current_usage);
+                tokio::spawn(async move {
+                    usage_handler
+                        .on_usage(
+                            "/chat/completions",
+                            &model_id,
+                            &request_id,
+                            &trace_id,
+                            StatusCode::OK.as_u16(),
+                            metadata,
+                            usage,
+                        )
+                        .await;
+                });
                 add_usage(&mut total_usage, current_usage);
             }
             log_llm_call(
@@ -670,6 +777,7 @@ fn build_client_tool_events(
         total_tokens: 0,
         cached_tokens: None,
         reasoning_tokens: None,
+        raw: None,
     });
     let finish_reason = finish_reason
         .clone()
@@ -700,6 +808,7 @@ fn build_completed_event(
         total_tokens: 0,
         cached_tokens: None,
         reasoning_tokens: None,
+        raw: None,
     });
     let finish_reason = finish_reason
         .clone()
@@ -722,6 +831,17 @@ fn add_usage(total: &mut Usage, delta: &Usage) {
         total.reasoning_tokens =
             Some(total.reasoning_tokens.unwrap_or(0) + delta.reasoning_tokens.unwrap_or(0));
     }
+    if delta.raw.is_some() {
+        total.raw = delta.raw.clone();
+    }
+}
+
+fn usage_to_value(usage: &Usage) -> Value {
+    usage
+        .raw
+        .clone()
+        .or_else(|| serde_json::to_value(usage).ok())
+        .unwrap_or(Value::Null)
 }
 
 fn add_usage_cloned(total: &Usage, delta: &Usage) -> Usage {
@@ -744,6 +864,7 @@ fn log_llm_call(
         total_tokens: 0,
         cached_tokens: None,
         reasoning_tokens: None,
+        raw: None,
     };
     let usage = usage.unwrap_or(&default_usage);
     info!(

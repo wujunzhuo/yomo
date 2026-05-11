@@ -14,9 +14,9 @@ use crate::metadata_mgr::MetadataMgr;
 use crate::model_api_provider::{
     AudioSpeechUsage, AudioTranscriptionsUsage, EmbeddingsUsage, ImagesUsage, MessagesUsage,
     ProviderRegistry, ProxyBody, ProxyRequest, RerankUsage, ResponsesUsage, SelectionError, Usage,
-    UsageHandler,
 };
 use crate::openai_http_mapping::openai_error_response;
+use crate::usage_handler::UsageHandler;
 use crate::utils::start_request_span;
 
 pub struct ModelApiHandlerState<A, M> {
@@ -167,18 +167,30 @@ where
 
     let response = match response.body {
         ProxyBody::Full(payload) => {
+            let request_id = parse_request_id(&payload).unwrap_or_default();
             if let Some(usage) = parse_usage(kind, &payload) {
-                state
-                    .usage_handler
-                    .on_usage(
-                        endpoint_path,
-                        &selection.model_id,
-                        &trace_id,
-                        response.status.as_u16(),
-                        metadata.clone(),
-                        usage,
-                    )
-                    .await;
+                if let Ok(usage_value) = serde_json::to_value(usage) {
+                    let usage_handler = std::sync::Arc::clone(&state.usage_handler);
+                    let endpoint = endpoint_path.to_string();
+                    let model_id = selection.model_id.clone();
+                    let trace_id = trace_id.clone();
+                    let status_code = response.status.as_u16();
+                    let metadata = metadata.clone();
+                    let request_id = request_id.clone();
+                    tokio::spawn(async move {
+                        usage_handler
+                            .on_usage(
+                                &endpoint,
+                                &model_id,
+                                &request_id,
+                                &trace_id,
+                                status_code,
+                                metadata,
+                                usage_value,
+                            )
+                            .await;
+                    });
+                }
             }
             builder.body(Body::from(payload)).expect("build response")
         }
@@ -311,6 +323,11 @@ fn parse_usage(kind: EndpointKind, payload: &Bytes) -> Option<Usage> {
                 }))
             }),
     }
+}
+
+fn parse_request_id(payload: &Bytes) -> Option<String> {
+    let value: Value = serde_json::from_slice(payload).ok()?;
+    value.get("id").and_then(|id| id.as_str()).map(|id| id.to_string())
 }
 
 fn parse_usage_value<T: DeserializeOwned>(usage: Option<Value>) -> Option<T> {

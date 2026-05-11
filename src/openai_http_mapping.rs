@@ -6,6 +6,7 @@ use axum::http::{StatusCode, header};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use log::{debug, error};
+use serde_json;
 use tracing::{Span, field, debug_span};
 
 use crate::openai_types::{
@@ -440,6 +441,11 @@ fn map_finish_reason_string(reason: &FinishReason) -> String {
 }
 
 pub fn map_usage_to_openai(usage: &crate::llm_provider::Usage) -> Usage {
+    if let Some(raw) = usage.raw.as_ref() {
+        if let Ok(raw_usage) = serde_json::from_value::<Usage>(raw.clone()) {
+            return raw_usage;
+        }
+    }
     Usage {
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,
@@ -485,6 +491,11 @@ fn map_finish_reason(reason: &str) -> String {
 }
 
 fn map_usage(usage: &crate::llm_provider::Usage) -> Usage {
+    if let Some(raw) = usage.raw.as_ref() {
+        if let Ok(raw_usage) = serde_json::from_value::<Usage>(raw.clone()) {
+            return raw_usage;
+        }
+    }
     Usage {
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,

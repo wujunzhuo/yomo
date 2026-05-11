@@ -1,5 +1,6 @@
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -14,6 +15,8 @@ pub struct Usage {
     pub cached_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -43,7 +43,8 @@ pub mod agent_loop;
 pub mod tool_invoker;
 /// OpenAI request/response mapping to Events.
 pub mod openai_http_mapping;
-
+/// Usage handler interfaces.
+pub mod usage_handler;
 /// OpenTelemetry tracing setup.
 pub mod trace;
 /// Server configuration used by the CLI.
