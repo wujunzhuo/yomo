@@ -178,6 +178,7 @@ where
         state.tool_invoker.clone(),
         metadata.clone(),
         trace_id.clone(),
+        provider_entry.label.clone(),
         state.agent_loop_config.clone(),
     )
     .await;

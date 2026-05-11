@@ -11,6 +11,7 @@ use crate::serve_config::{ConfigError, ModelApiConfig, ModelApiEndpointConfig, P
 #[derive(Clone)]
 pub struct ProviderEntry {
     pub model_id: String,
+    pub label: Option<String>,
     pub provider: Arc<dyn ModelApiProvider>,
 }
 
@@ -133,6 +134,7 @@ fn build_providers(
             let provider = build_provider(provider_config, endpoint.path.as_str())?;
             let entry = ProviderEntry {
                 model_id: provider_config.model_id.clone(),
+                label: provider_config.label.clone(),
                 provider,
             };
             endpoint_models.insert(model_id.clone(), entry);

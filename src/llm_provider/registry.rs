@@ -11,6 +11,7 @@ use crate::llm_provider::selection::SelectionStrategy;
 pub struct ProviderEntry {
     pub provider_type: String,
     pub model_id: String,
+    pub label: Option<String>,
     pub provider: Arc<dyn Provider>,
 }
 
@@ -56,6 +57,7 @@ impl<M> ProviderRegistry<M> {
             let entry = ProviderEntry {
                 provider_type: item.provider_type.clone(),
                 model_id: item.model_id.clone(),
+                label: item.label.clone(),
                 provider,
             };
             registry.insert(item.model_id.clone(), entry);

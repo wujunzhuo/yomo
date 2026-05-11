@@ -43,6 +43,8 @@ pub struct ProviderConfig {
     pub provider_type: String,
     pub model_id: String,
     #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
     pub default: bool,
     #[serde(default)]
     pub params: HashMap<String, String>,

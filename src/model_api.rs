@@ -181,6 +181,7 @@ where
                             .on_usage(
                                 &endpoint,
                                 &model_id,
+                                provider_entry.label.as_deref(),
                                 &request_id,
                                 &trace_id,
                                 status_code,

@@ -109,6 +109,7 @@ pub async fn run_agent_loop<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: M,
     trace_id: String,
+    label: Option<String>,
     config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
@@ -125,6 +126,7 @@ where
             invoker,
             metadata,
             trace_id,
+            label,
             config,
         )
         .await
@@ -136,6 +138,7 @@ where
             invoker,
             metadata,
             trace_id,
+            label,
             config,
         )
         .await
@@ -149,6 +152,7 @@ async fn run_agent_loop_nonstream<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: Arc<M>,
     trace_id: String,
+    label: Option<String>,
     config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
@@ -180,6 +184,7 @@ where
         let model_id = response.model.clone();
         let request_id = response.request_id.clone();
         let usage_trace_id = trace_id.clone();
+        let label = label.clone();
         let metadata_value = (*metadata).clone();
         let usage = usage_to_value(&response.usage);
         tokio::spawn(async move {
@@ -187,6 +192,7 @@ where
                 .on_usage(
                     "/chat/completions",
                     &model_id,
+                    label.as_deref(),
                     &request_id,
                     &usage_trace_id,
                     StatusCode::OK.as_u16(),
@@ -263,6 +269,7 @@ async fn run_agent_loop_stream<A, M>(
     invoker: Arc<dyn ToolInvoker>,
     metadata: Arc<M>,
     trace_id: String,
+    label: Option<String>,
     config: AgentLoopConfig<M>,
 ) -> Result<AgentLoopResult, ProviderError>
 where
@@ -430,6 +437,7 @@ where
                 let model_id = model_id.clone();
                 let request_id = request_id.clone().unwrap_or_default();
                 let trace_id = trace_id.clone();
+                let label = label.clone();
                 let metadata = (*metadata).clone();
                 let usage = usage_to_value(current_usage);
                 tokio::spawn(async move {
@@ -437,6 +445,7 @@ where
                         .on_usage(
                             "/chat/completions",
                             &model_id,
+                            label.as_deref(),
                             &request_id,
                             &trace_id,
                             StatusCode::OK.as_u16(),
