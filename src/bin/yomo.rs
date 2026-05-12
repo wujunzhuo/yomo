@@ -167,7 +167,7 @@ async fn serve(opt: ServeOptions) -> Result<()> {
 
     info!("config: {:?}, {:?}", config.http_api, config.zipper);
 
-    init_tracing().await?;
+    let _trace_guard = init_tracing().await?;
 
     let (sender, receiver) = unbounded_channel();
     let tool_mgr = Arc::new(ToolMgrImpl::new());

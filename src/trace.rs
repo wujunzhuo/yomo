@@ -10,10 +10,22 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 
-pub async fn init_tracing() -> Result<(), anyhow::Error> {
+pub struct TraceGuard {
+    enabled: bool,
+}
+
+impl Drop for TraceGuard {
+    fn drop(&mut self) {
+        if self.enabled {
+            opentelemetry::global::shutdown_tracer_provider();
+        }
+    }
+}
+
+pub async fn init_tracing() -> Result<TraceGuard, anyhow::Error> {
     let endpoint = match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
         Ok(value) if !value.trim().is_empty() => value,
-        _ => return Ok(()),
+        _ => return Ok(TraceGuard { enabled: false }),
     };
     let service_name = std::env::var("OTEL_SERVICE_NAME")
         .unwrap_or_else(|_| "yomo".to_string());
@@ -39,5 +51,5 @@ pub async fn init_tracing() -> Result<(), anyhow::Error> {
         .with(otel_layer);
     set_global_default(subscriber).context("set tracing subscriber")?;
     log::info!("tracing enabled: endpoint={endpoint}, service={service_name}");
-    Ok(())
+    Ok(TraceGuard { enabled: true })
 }
