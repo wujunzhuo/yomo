@@ -4,7 +4,7 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::{Resource, trace as sdktrace};
-use anyhow::Context;
+use anyhow::{Context, Result};
 use tracing::subscriber::set_global_default;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -22,7 +22,7 @@ impl Drop for TraceGuard {
     }
 }
 
-pub async fn init_tracing() -> Result<TraceGuard, anyhow::Error> {
+pub async fn init_tracing() -> Result<TraceGuard> {
     let endpoint = match std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
         Ok(value) if !value.trim().is_empty() => value,
         _ => return Ok(TraceGuard { enabled: false }),
