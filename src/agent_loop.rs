@@ -30,7 +30,7 @@ use crate::usage_handler::{NoopUsageHandler, UsageHandler};
 pub struct AgentLoopConfig<M> {
     pub max_calls: usize,
     pub usage_handler: Arc<dyn UsageHandler<M>>,
-    pub preprocessor: Arc<dyn RequestPreprocessor<M>>,
+    pub request_hook: Arc<dyn RequestHook<M>>,
 }
 
 impl<M> Default for AgentLoopConfig<M>
@@ -41,7 +41,7 @@ where
         Self {
             max_calls: 14,
             usage_handler: Arc::new(NoopUsageHandler::default()),
-            preprocessor: Arc::new(NoopRequestPreprocessor::default()),
+            request_hook: Arc::new(NoopRequestHook::default()),
         }
     }
 }
@@ -57,7 +57,7 @@ impl<M> AgentLoopConfig<M> {
 }
 
 #[async_trait]
-pub trait RequestPreprocessor<M>: Send + Sync {
+pub trait RequestHook<M>: Send + Sync {
     async fn preprocess(
         &self,
         trace_id: &str,
@@ -67,10 +67,10 @@ pub trait RequestPreprocessor<M>: Send + Sync {
 }
 
 #[derive(Clone, Default)]
-pub struct NoopRequestPreprocessor;
+pub struct NoopRequestHook;
 
 #[async_trait]
-impl<M> RequestPreprocessor<M> for NoopRequestPreprocessor
+impl<M> RequestHook<M> for NoopRequestHook
 where
     M: Send + Sync + 'static,
 {

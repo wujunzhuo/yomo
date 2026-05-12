@@ -101,7 +101,7 @@ where
 
     if let Err(err) = state
         .agent_loop_config
-        .preprocessor
+        .request_hook
         .preprocess(&trace_id, &metadata, &mut request)
         .await
     {
