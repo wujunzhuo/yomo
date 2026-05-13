@@ -1,4 +1,5 @@
 use async_stream::try_stream;
+use async_trait::async_trait;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use std::pin::Pin;
@@ -24,47 +25,46 @@ impl OpenAIProvider {
     }
 }
 
+#[async_trait]
 impl Provider for OpenAIProvider {
     fn model_id(&self) -> &str {
         "openai"
     }
 
-    fn complete<'a>(
-        &'a self,
+    async fn complete(
+        &self,
         mut request: ChatCompletionRequest,
-    ) -> Pin<
-        Box<dyn futures_core::Future<Output = Result<UnifiedResponse, ProviderError>> + Send + 'a>,
-    >
-    {
-        Box::pin(async move {
-            if let Some(model_id) = &self.model_id {
-                request.model = model_id.clone();
-            }
-            validate_request(&request)?;
-            let response = self
-                .client
-                .chat_completions(request)
-                .await
-                .map_err(map_openai_error)?;
+    ) -> Result<UnifiedResponse, ProviderError> {
+        if let Some(model_id) = &self.model_id {
+            request.model = model_id.clone();
+        }
+        validate_request(&request)?;
+        let response = self
+            .client
+            .chat_completions(request)
+            .await
+            .map_err(map_openai_error)?;
 
-            mapper::map_response(response)
-        })
+        mapper::map_response(response)
     }
 
-    fn stream<'a>(
-        &'a self,
+    async fn stream(
+        &self,
         mut request: ChatCompletionRequest,
-    ) -> Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send + 'a>> {
-        Box::pin(try_stream! {
-            if let Some(model_id) = &self.model_id {
-                request.model = model_id.clone();
-            }
-            validate_request(&request)?;
-            let stream = self
-                .client
-                .chat_completions_stream(request)
-                .await
-                .map_err(map_openai_error)?;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send>>, ProviderError>
+    {
+        if let Some(model_id) = &self.model_id {
+            request.model = model_id.clone();
+        }
+        validate_request(&request)?;
+        let stream = self
+            .client
+            .chat_completions_stream(request)
+            .await
+            .map_err(map_openai_error)?;
+        let mut stream = stream;
+
+        let output = try_stream! {
             futures_util::pin_mut!(stream);
             let mut state = mapper::StreamMapState::default();
 
@@ -74,7 +74,9 @@ impl Provider for OpenAIProvider {
                     yield event;
                 }
             }
-        })
+        };
+
+        Ok(Box::pin(output))
     }
 }
 

@@ -1,7 +1,7 @@
+use async_trait::async_trait;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::future::Future;
 use std::pin::Pin;
 
 use crate::openai_types::ChatCompletionRequest;
@@ -151,16 +151,17 @@ impl std::fmt::Display for ProviderError {
 
 impl std::error::Error for ProviderError {}
 
+#[async_trait]
 pub trait Provider: Send + Sync {
     fn model_id(&self) -> &str;
 
-    fn complete<'a>(
-        &'a self,
+    async fn complete(
+        &self,
         request: ChatCompletionRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<UnifiedResponse, ProviderError>> + Send + 'a>>;
+    ) -> Result<UnifiedResponse, ProviderError>;
 
-    fn stream<'a>(
-        &'a self,
+    async fn stream(
+        &self,
         request: ChatCompletionRequest,
-    ) -> Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send + 'a>>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send>>, ProviderError>;
 }

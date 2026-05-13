@@ -175,10 +175,7 @@ where
             request.tool_choice = None;
         }
 
-        let mut response = provider
-            .complete(request.clone())
-            .await
-            .map_err(|err| ProviderError::Internal(err.to_string()))?;
+        let mut response = provider.complete(request.clone()).await?;
         response.usage = config.handle_usage(response.usage.raw.clone(), response.usage);
         let usage_handler = Arc::clone(&config.usage_handler);
         let model_id = response.model.clone();
@@ -295,7 +292,7 @@ where
             request.tool_choice = None;
             }
 
-            let mut provider_stream = provider.stream(request.clone());
+            let mut provider_stream = provider.stream(request.clone()).await?;
 
             let usage_offset = total_usage.clone();
 
