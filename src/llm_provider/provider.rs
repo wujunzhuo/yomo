@@ -160,8 +160,11 @@ pub trait Provider: Send + Sync {
         request: ChatCompletionRequest,
     ) -> Result<UnifiedResponse, ProviderError>;
 
-    async fn stream(
-        &self,
+    async fn stream<'a>(
+        &'a self,
         request: ChatCompletionRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send>>, ProviderError>;
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send + 'a>>,
+        ProviderError,
+    >;
 }

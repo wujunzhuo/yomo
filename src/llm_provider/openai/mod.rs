@@ -48,11 +48,13 @@ impl Provider for OpenAIProvider {
         mapper::map_response(response)
     }
 
-    async fn stream(
-        &self,
+    async fn stream<'a>(
+        &'a self,
         mut request: ChatCompletionRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send>>, ProviderError>
-    {
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<UnifiedEvent, ProviderError>> + Send + 'a>>,
+        ProviderError,
+    > {
         if let Some(model_id) = &self.model_id {
             request.model = model_id.clone();
         }
@@ -62,7 +64,7 @@ impl Provider for OpenAIProvider {
             .chat_completions_stream(request)
             .await
             .map_err(map_openai_error)?;
-        let mut stream = stream;
+        let stream = stream;
 
         let output = try_stream! {
             futures_util::pin_mut!(stream);
