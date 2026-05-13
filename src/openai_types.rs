@@ -117,6 +117,8 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<HashMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prediction: Option<Prediction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verbosity: Option<String>,

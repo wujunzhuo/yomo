@@ -5,6 +5,7 @@ use crate::serve_config::ConfigError;
 use crate::serve_config::ProviderConfig;
 use crate::llm_provider::Provider;
 use crate::llm_provider::openai::build_openai_provider;
+use crate::llm_provider::vllm_deepseek::build_vllm_deepseek_provider;
 use crate::llm_provider::selection::SelectionStrategy;
 
 #[derive(Clone)]
@@ -51,6 +52,7 @@ impl<M> ProviderRegistry<M> {
         for item in providers {
             let provider: Arc<dyn Provider> = match item.provider_type.as_str() {
                 "openai" => Arc::new(build_openai_provider(&item.params)?),
+                "vllm_deepseek" => Arc::new(build_vllm_deepseek_provider(&item.params)?),
                 other => return Err(ConfigError::UnknownProviderType(other.to_string())),
             };
 
