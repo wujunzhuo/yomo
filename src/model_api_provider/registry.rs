@@ -150,14 +150,14 @@ fn build_provider(
     endpoint_path: &str,
 ) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
     match endpoint_path {
-        "/messages" => build_anthropic_client(provider),
-        "/responses" => build_openai_client(provider),
-        "/embeddings" => build_openai_client(provider),
-        "/rerank" => build_openai_client(provider),
-        "/audio/speech" => build_openai_client(provider),
-        "/audio/transcriptions" => build_openai_client(provider),
-        "/images/generations" => build_openai_client(provider),
-        "/images/edits" => build_openai_client(provider),
+        "/messages" => build_passthrough_client(provider),
+        "/responses" => build_passthrough_client(provider),
+        "/embeddings" => build_passthrough_client(provider),
+        "/rerank" => build_passthrough_client(provider),
+        "/audio/speech" => build_passthrough_client(provider),
+        "/audio/transcriptions" => build_passthrough_client(provider),
+        "/images/generations" => build_passthrough_client(provider),
+        "/images/edits" => build_passthrough_client(provider),
         other => Err(ConfigError::InvalidProvider(format!(
             "unknown model_api endpoint: {}",
             other
@@ -165,8 +165,8 @@ fn build_provider(
     }
 }
 
-fn build_openai_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
-    if provider.provider_type != "openai" {
+fn build_passthrough_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
+    if provider.provider_type != "passthrough" {
         return Err(ConfigError::UnknownProviderType(provider.provider_type.clone()));
     }
     let api_key = provider
@@ -177,7 +177,12 @@ fn build_openai_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProv
         .params
         .get("base_url")
         .cloned()
-        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        .ok_or_else(|| ConfigError::InvalidProvider("base_url is required".to_string()))?;
+    let upstream_model = provider
+        .params
+        .get("model")
+        .cloned()
+        .ok_or_else(|| ConfigError::InvalidProvider("model is required".to_string()))?;
     let mut headers = HeaderMap::new();
     let auth_value = format!("Bearer {}", api_key);
     headers.insert(
@@ -191,46 +196,6 @@ fn build_openai_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProv
         base_url,
         headers,
         provider.model_id.clone(),
-    )))
-}
-
-fn build_anthropic_client(
-    provider: &ProviderConfig,
-) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
-    if provider.provider_type != "anthropic" {
-        return Err(ConfigError::UnknownProviderType(provider.provider_type.clone()));
-    }
-    let api_key = provider
-        .params
-        .get("api_key")
-        .ok_or_else(|| ConfigError::InvalidProvider("api_key is required".to_string()))?;
-    let base_url = provider
-        .params
-        .get("base_url")
-        .cloned()
-        .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
-    let version = provider
-        .params
-        .get("anthropic_version")
-        .cloned()
-        .unwrap_or_else(|| "2023-06-01".to_string());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        "x-api-key",
-        api_key
-            .parse::<axum::http::HeaderValue>()
-            .map_err(|err| ConfigError::InvalidProvider(err.to_string()))?,
-    );
-    headers.insert(
-        "anthropic-version",
-        version
-            .parse::<axum::http::HeaderValue>()
-            .map_err(|err| ConfigError::InvalidProvider(err.to_string()))?,
-    );
-    Ok(Arc::new(ProxyClient::new(
-        reqwest::Client::new(),
-        base_url,
-        headers,
-        provider.model_id.clone(),
+        upstream_model,
     )))
 }
