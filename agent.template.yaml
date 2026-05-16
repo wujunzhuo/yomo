@@ -10,63 +10,86 @@ http_api:
   enable_tool_api: false
 
 llm_providers:
-  - type: "openai"
+  # LLM provider types:
+  # - openai-compatible: OpenAI-compatible /v1/chat/completions upstream.
+  #   required params: model, api_key, base_url
+  # - vllm_deepseek: vllm deepseek specialized provider.
+  #   required params: model, api_key, base_url
+  # - vertexai: Google Vertex AI generateContent/streamGenerateContent.
+  #   required params: model, project_id, location, credentials_file
+  # Common fields:
+  # - model_id: external model name used by requests
+  # - default: optional, marks default model when model is not specified
+  # - label: optional display label for logs/ops
+  - type: "openai-compatible"
     model_id: "gpt-4o-mini"
     default: true
     params:
       model: "gpt-4o-mini"
       api_key: ""
       base_url: "https://api.openai.com/v1"
+  # - type: "vllm_deepseek"
+  #   model_id: "deepseek-v4-flash"
+  #   params:
+  #     model: "DeepSeek-V4-Flash"
+  #     api_key: ""
+  #     base_url: "http://127.0.0.1:8000/v1"
+  # - type: "vertexai"
+  #   model_id: "gemini-2.5-flash"
+  #   params:
+  #     model: "gemini-2.5-flash"
+  #     project_id: "your-gcp-project-id"
+  #     location: "global"
+  #     credentials_file: "/abs/path/to/service-account.json"
 
 model_api:
+  # model_api provider types:
+  # - passthrough: generic proxy for embeddings/rerank/audio/images endpoints.
+  #   required params: api_key, base_url, model
+  # - responses: OpenAI /v1/responses adapter.
+  #   required params: api_key, base_url, model
+  # - bedrock-messages: AWS Bedrock Anthropic Messages adapter.
+  #   required params: model, aws_region
+  #   optional params: anthropic_version(default bedrock-2023-05-31),
+  #     max_tokens(default 4096), aws_access_key_id, aws_secret_access_key, aws_session_token
+  # - generate_content: Google Vertex generateContent adapter.
+  #   required params: model, project_id, credentials_file
+  #   optional params: location(default global)
   providers:
-    - type: "openai"
+    - type: "responses"
       model_id: "gpt-4o-mini"
       params:
+        model: "gpt-4o-mini"
         api_key: ""
         base_url: "https://api.openai.com/v1"
-    - type: "openai"
-      model_id: "gpt-image-1"
-      params:
-        api_key: ""
-        base_url: "https://api.openai.com/v1"
-    - type: "anthropic"
-      model_id: "claude-3-5-sonnet-20240620"
-      params:
-        api_key: ""
-        base_url: "https://api.anthropic.com/v1"
-        anthropic_version: "2023-06-01"
+    # - type: "responses"
+    #   model_id: "gpt-5.3-codex"
+    #   params:
+    #     model: "gpt-5.3-codex"
+    #     api_key: ""
+    #     base_url: "https://api.openai.com/v1"
+    # - type: "bedrock-messages"
+    #   model_id: "claude-sonnet-4-6"
+    #   params:
+    #     model: "global.anthropic.claude-sonnet-4-6"
+    #     aws_region: "ap-northeast-1"
+    #     anthropic_version: "bedrock-2023-05-31"
+    #     max_tokens: "4096"
+    # - type: "generate_content"
+    #   model_id: "gemini-2.5-flash"
+    #   params:
+    #     model: "gemini-2.5-flash"
+    #     project_id: "your-gcp-project-id"
+    #     location: "global"
+    #     credentials_file: "/abs/path/to/service-account.json"
 
   endpoints:
+    # Supported endpoint paths:
+    # /responses, /messages, /models/:generateContent,
+    # /embeddings, /rerank,
+    # /audio/speech, /audio/transcriptions,
+    # /images/generations, /images/edits
     - path: "/responses"
       models:
         - "gpt-4o-mini"
       default_model: "gpt-4o-mini"
-    - path: "/messages"
-      models:
-        - "claude-3-5-sonnet-20240620"
-      default_model: "claude-3-5-sonnet-20240620"
-    - path: "/embeddings"
-      models:
-        - "gpt-4o-mini"
-      default_model: "gpt-4o-mini"
-    - path: "/rerank"
-      models:
-        - "gpt-4o-mini"
-      default_model: "gpt-4o-mini"
-    - path: "/audio/speech"
-      models:
-        - "gpt-4o-mini"
-      default_model: "gpt-4o-mini"
-    - path: "/audio/transcriptions"
-      models:
-        - "gpt-4o-mini"
-      default_model: "gpt-4o-mini"
-    - path: "/images/generations"
-      models:
-        - "gpt-image-1"
-      default_model: "gpt-image-1"
-    - path: "/images/edits"
-      models:
-        - "gpt-image-1"
-      default_model: "gpt-image-1"

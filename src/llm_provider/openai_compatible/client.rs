@@ -24,7 +24,7 @@ impl Config {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: "https://api.openai.com".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
             error_parser: None,
         }
     }

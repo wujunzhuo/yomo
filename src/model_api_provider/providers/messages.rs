@@ -180,7 +180,7 @@ impl ModelApiProvider for MessagesClient {
 }
 
 pub fn build_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
-    if provider.provider_type != "messages" {
+    if provider.provider_type != "bedrock-messages" {
         return Err(ConfigError::UnknownProviderType(provider.provider_type.clone()));
     }
     let bedrock_model = provider

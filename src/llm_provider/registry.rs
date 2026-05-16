@@ -4,8 +4,9 @@ use std::sync::Arc;
 use crate::serve_config::ConfigError;
 use crate::serve_config::ProviderConfig;
 use crate::llm_provider::Provider;
-use crate::llm_provider::openai::build_openai_provider;
+use crate::llm_provider::openai_compatible::build_openai_compatible_provider;
 use crate::llm_provider::vllm_deepseek::build_vllm_deepseek_provider;
+use crate::llm_provider::vertexai::build_vertexai_provider;
 use crate::llm_provider::selection::SelectionStrategy;
 
 #[derive(Clone)]
@@ -51,8 +52,11 @@ impl<M> ProviderRegistry<M> {
 
         for item in providers {
             let provider: Arc<dyn Provider> = match item.provider_type.as_str() {
-                "openai" => Arc::new(build_openai_provider(&item.params)?),
+                "openai-compatible" => {
+                    Arc::new(build_openai_compatible_provider(&item.params)?)
+                }
                 "vllm_deepseek" => Arc::new(build_vllm_deepseek_provider(&item.params)?),
+                "vertexai" => Arc::new(build_vertexai_provider(&item.params)?),
                 other => return Err(ConfigError::UnknownProviderType(other.to_string())),
             };
 

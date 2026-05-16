@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use crate::llm_provider::openai::{client, mapper};
+use crate::llm_provider::openai_compatible::{client, mapper};
 use crate::llm_provider::{Provider, ProviderError, UnifiedEvent, UnifiedResponse};
 use crate::openai_http_mapping::validate_openai_request;
 use crate::openai_types::{ChatCompletionRequest, ClientError, Content, ContentPart, Role};

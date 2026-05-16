@@ -18,7 +18,7 @@ use serde_json;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::llm_provider::openai::mapper::ensure_tool_call_id;
+use crate::llm_provider::openai_compatible::mapper::ensure_tool_call_id;
 use crate::llm_provider::{
     Provider, ProviderError, ToolCall as ProviderToolCall, UnifiedEvent, UnifiedResponse, Usage,
 };

@@ -14,21 +14,21 @@ pub mod client;
 pub mod mapper;
 
 #[derive(Clone)]
-pub struct OpenAIProvider {
+pub struct OpenAICompatibleProvider {
     client: client::Client,
     model_id: Option<String>,
 }
 
-impl OpenAIProvider {
+impl OpenAICompatibleProvider {
     pub fn new(client: client::Client, model_id: Option<String>) -> Self {
         Self { client, model_id }
     }
 }
 
 #[async_trait]
-impl Provider for OpenAIProvider {
+impl Provider for OpenAICompatibleProvider {
     fn model_id(&self) -> &str {
-        "openai"
+        "openai-compatible"
     }
 
     async fn complete(
@@ -86,9 +86,9 @@ fn map_openai_error(err: ClientError) -> ProviderError {
     ProviderError::Internal(err.to_string())
 }
 
-pub fn build_openai_provider(
+pub fn build_openai_compatible_provider(
     params: &std::collections::HashMap<String, String>,
-) -> Result<OpenAIProvider, ConfigError> {
+) -> Result<OpenAICompatibleProvider, ConfigError> {
     let api_key = params
         .get("api_key")
         .ok_or_else(|| ConfigError::InvalidProvider("api_key is required".to_string()))?;
@@ -99,7 +99,7 @@ pub fn build_openai_provider(
     }
     let client = client::Client::new(config)
         .map_err(|err| ConfigError::InvalidProvider(err.to_string()))?;
-    Ok(OpenAIProvider::new(client, model_id))
+    Ok(OpenAICompatibleProvider::new(client, model_id))
 }
 
 fn validate_request(request: &ChatCompletionRequest) -> Result<(), ProviderError> {
