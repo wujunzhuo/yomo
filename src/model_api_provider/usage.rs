@@ -7,6 +7,7 @@ pub enum Usage {
     Messages(MessagesUsage),
     Responses(ResponsesUsage),
     ChatCompletions(ChatCompletionsUsage),
+    GenerateContent(GenerateContentUsage),
     Embeddings(EmbeddingsUsage),
     Rerank(RerankUsage),
     AudioSpeech(AudioSpeechUsage),
@@ -81,6 +82,14 @@ pub struct ChatCompletionsCompletionTokensDetails {
     pub audio_tokens: Option<u64>,
     pub accepted_prediction_tokens: Option<u64>,
     pub rejected_prediction_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateContentUsage {
+    pub prompt_token_count: Option<u64>,
+    pub candidates_token_count: Option<u64>,
+    pub thoughts_token_count: Option<u64>,
+    pub total_token_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

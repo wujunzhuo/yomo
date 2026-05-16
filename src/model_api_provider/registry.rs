@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::http::HeaderMap;
-
-use crate::model_api_provider::provider::ProxyClient;
+use crate::model_api_provider::providers;
 use crate::model_api_provider::selection::{SelectionError, SelectionResult, SelectionStrategy};
 use crate::model_api_provider::ModelApiProvider;
 use crate::serve_config::{ConfigError, ModelApiConfig, ModelApiEndpointConfig, ProviderConfig};
@@ -150,52 +148,18 @@ fn build_provider(
     endpoint_path: &str,
 ) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
     match endpoint_path {
-        "/messages" => build_passthrough_client(provider),
-        "/responses" => build_passthrough_client(provider),
-        "/embeddings" => build_passthrough_client(provider),
-        "/rerank" => build_passthrough_client(provider),
-        "/audio/speech" => build_passthrough_client(provider),
-        "/audio/transcriptions" => build_passthrough_client(provider),
-        "/images/generations" => build_passthrough_client(provider),
-        "/images/edits" => build_passthrough_client(provider),
+        "/messages" => providers::messages::build_client(provider),
+        "/responses" => providers::responses::build_client(provider),
+        "/embeddings" => providers::passthrough::build_client(provider),
+        "/rerank" => providers::passthrough::build_client(provider),
+        "/audio/speech" => providers::passthrough::build_client(provider),
+        "/audio/transcriptions" => providers::passthrough::build_client(provider),
+        "/images/generations" => providers::passthrough::build_client(provider),
+        "/images/edits" => providers::passthrough::build_client(provider),
+        "/models/:generateContent" => providers::generate_content::build_client(provider),
         other => Err(ConfigError::InvalidProvider(format!(
             "unknown model_api endpoint: {}",
             other
         ))),
     }
-}
-
-fn build_passthrough_client(provider: &ProviderConfig) -> Result<Arc<dyn ModelApiProvider>, ConfigError> {
-    if provider.provider_type != "passthrough" {
-        return Err(ConfigError::UnknownProviderType(provider.provider_type.clone()));
-    }
-    let api_key = provider
-        .params
-        .get("api_key")
-        .ok_or_else(|| ConfigError::InvalidProvider("api_key is required".to_string()))?;
-    let base_url = provider
-        .params
-        .get("base_url")
-        .cloned()
-        .ok_or_else(|| ConfigError::InvalidProvider("base_url is required".to_string()))?;
-    let upstream_model = provider
-        .params
-        .get("model")
-        .cloned()
-        .ok_or_else(|| ConfigError::InvalidProvider("model is required".to_string()))?;
-    let mut headers = HeaderMap::new();
-    let auth_value = format!("Bearer {}", api_key);
-    headers.insert(
-        axum::http::header::AUTHORIZATION,
-        auth_value
-            .parse::<axum::http::HeaderValue>()
-            .map_err(|err| ConfigError::InvalidProvider(err.to_string()))?,
-    );
-    Ok(Arc::new(ProxyClient::new(
-        reqwest::Client::new(),
-        base_url,
-        headers,
-        provider.model_id.clone(),
-        upstream_model,
-    )))
 }

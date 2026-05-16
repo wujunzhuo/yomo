@@ -3,13 +3,13 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, StatusCode};
-use futures_util::stream;
 use futures_core::Stream;
+use futures_util::stream;
 use futures_util::StreamExt;
 use reqwest::multipart::{Form, Part};
 use serde_json::Value;
 
-pub struct ProxyRequest {
+pub struct ProviderRequest {
     pub method: Method,
     pub endpoint_path: String,
     pub headers: HeaderMap,
@@ -18,67 +18,22 @@ pub struct ProxyRequest {
     pub content_type: Option<String>,
 }
 
-pub enum ProxyBody {
+pub enum ProviderBody {
     Full(Bytes),
     Stream(Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>),
 }
 
-pub struct ProxyResponse {
+pub struct ProviderResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    pub body: ProxyBody,
+    pub body: ProviderBody,
 }
 
 #[async_trait]
 pub trait ModelApiProvider: Send + Sync {
     fn model_id(&self) -> &str;
 
-    async fn proxy(&self, req: ProxyRequest) -> Result<ProxyResponse, anyhow::Error>;
-}
-
-#[derive(Clone)]
-pub struct ProxyClient {
-    client: reqwest::Client,
-    base_url: String,
-    auth_headers: HeaderMap,
-    model_id: String,
-    upstream_model: String,
-}
-
-impl ProxyClient {
-    pub fn new(
-        client: reqwest::Client,
-        base_url: String,
-        auth_headers: HeaderMap,
-        model_id: String,
-        upstream_model: String,
-    ) -> Self {
-        Self {
-            client,
-            base_url,
-            auth_headers,
-            model_id,
-            upstream_model,
-        }
-    }
-}
-
-#[async_trait]
-impl ModelApiProvider for ProxyClient {
-    fn model_id(&self) -> &str {
-        &self.model_id
-    }
-
-    async fn proxy(&self, req: ProxyRequest) -> Result<ProxyResponse, anyhow::Error> {
-        proxy_request(
-            &self.client,
-            &self.base_url,
-            self.auth_headers.clone(),
-            Some(self.upstream_model.as_str()),
-            req,
-        )
-        .await
-    }
+    async fn execute(&self, req: ProviderRequest) -> Result<ProviderResponse, anyhow::Error>;
 }
 
 const HOP_HEADERS: [&str; 8] = [
@@ -97,8 +52,8 @@ pub async fn proxy_request(
     base_url: &str,
     mut auth_headers: HeaderMap,
     model_override: Option<&str>,
-    req: ProxyRequest,
-) -> Result<ProxyResponse, anyhow::Error> {
+    req: ProviderRequest,
+) -> Result<ProviderResponse, anyhow::Error> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), req.endpoint_path);
     let mut headers = filter_request_headers(req.headers);
     headers.extend(auth_headers.drain());
@@ -131,30 +86,28 @@ pub async fn proxy_request(
 
     if is_stream {
         resp_headers.remove(axum::http::header::CONTENT_LENGTH);
-        let stream = response
-            .bytes_stream()
-            .map(|chunk| match chunk {
-                Ok(bytes) => Ok(bytes),
-                Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
-            });
+        let stream = response.bytes_stream().map(|chunk| match chunk {
+            Ok(bytes) => Ok(bytes),
+            Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+        });
         let body: Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>> =
             Box::pin(stream);
-        Ok(ProxyResponse {
+        Ok(ProviderResponse {
             status,
             headers: resp_headers,
-            body: ProxyBody::Stream(body),
+            body: ProviderBody::Stream(body),
         })
     } else {
         let bytes = response.bytes().await.map_err(|err| anyhow::anyhow!(err))?;
-        Ok(ProxyResponse {
+        Ok(ProviderResponse {
             status,
             headers: resp_headers,
-            body: ProxyBody::Full(bytes),
+            body: ProviderBody::Full(bytes),
         })
     }
 }
 
-fn rewrite_json_model(body: &Bytes, model: &str) -> Result<Bytes, anyhow::Error> {
+pub(crate) fn rewrite_json_model(body: &Bytes, model: &str) -> Result<Bytes, anyhow::Error> {
     let mut json: Value = serde_json::from_slice(body)?;
     if !json.is_object() {
         return Ok(body.clone());
@@ -164,7 +117,53 @@ fn rewrite_json_model(body: &Bytes, model: &str) -> Result<Bytes, anyhow::Error>
     Ok(Bytes::from(rewritten))
 }
 
-async fn rewrite_multipart_model(
+pub(crate) fn parse_stream_flag(body: &Bytes) -> bool {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| value.get("stream").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+pub(crate) fn rewrite_messages_body(
+    body: &Bytes,
+    anthropic_version: &str,
+    default_max_tokens: u64,
+) -> Result<Bytes, anyhow::Error> {
+    let mut value: Value = serde_json::from_slice(body)?;
+    if !value.is_object() {
+        return Ok(body.clone());
+    }
+
+    {
+        let obj = value
+            .as_object_mut()
+            .expect("checked object with Value::is_object");
+        obj.remove("model");
+        obj.remove("stream");
+    }
+
+    strip_cache_control_scope(&mut value);
+
+    {
+        let obj = value
+            .as_object_mut()
+            .expect("checked object with Value::is_object");
+        obj.insert(
+            "anthropic_version".to_string(),
+            Value::String(anthropic_version.to_string()),
+        );
+        if !obj.contains_key("max_tokens") {
+            obj.insert(
+                "max_tokens".to_string(),
+                Value::Number(default_max_tokens.into()),
+            );
+        }
+    }
+
+    Ok(Bytes::from(serde_json::to_vec(&value)?))
+}
+
+pub(crate) async fn rewrite_multipart_model(
     content_type: &str,
     body: &Bytes,
     model: &str,
@@ -198,15 +197,7 @@ async fn rewrite_multipart_model(
     Ok(form.text("model", model.to_string()))
 }
 
-fn parse_multipart_boundary(content_type: &str) -> Option<String> {
-    content_type.split(';').find_map(|part| {
-        let part = part.trim();
-        part.strip_prefix("boundary=")
-            .map(|value| value.trim_matches('"').to_string())
-    })
-}
-
-fn filter_request_headers(headers: HeaderMap) -> HeaderMap {
+pub(crate) fn filter_request_headers(headers: HeaderMap) -> HeaderMap {
     let mut filtered = HeaderMap::new();
     for (key, value) in headers.iter() {
         if key == axum::http::header::HOST {
@@ -223,7 +214,7 @@ fn filter_request_headers(headers: HeaderMap) -> HeaderMap {
     filtered
 }
 
-fn filter_response_headers(headers: &HeaderMap) -> HeaderMap {
+pub(crate) fn filter_response_headers(headers: &HeaderMap) -> HeaderMap {
     let mut filtered = HeaderMap::new();
     for (key, value) in headers.iter() {
         if is_hop_header(key.as_str()) {
@@ -232,6 +223,40 @@ fn filter_response_headers(headers: &HeaderMap) -> HeaderMap {
         filtered.insert(key.clone(), value.clone());
     }
     filtered
+}
+
+fn strip_cache_control_scope(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(cache_control) = map.get_mut("cache_control") {
+                if let Some(cache_control_obj) = cache_control.as_object_mut() {
+                    cache_control_obj.remove("scope");
+                    if let Some(ephemeral) = cache_control_obj.get_mut("ephemeral") {
+                        if let Some(ephemeral_obj) = ephemeral.as_object_mut() {
+                            ephemeral_obj.remove("scope");
+                        }
+                    }
+                }
+            }
+            for child in map.values_mut() {
+                strip_cache_control_scope(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                strip_cache_control_scope(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_multipart_boundary(content_type: &str) -> Option<String> {
+    content_type.split(';').find_map(|part| {
+        let part = part.trim();
+        part.strip_prefix("boundary=")
+            .map(|value| value.trim_matches('"').to_string())
+    })
 }
 
 fn is_hop_header(header: &str) -> bool {

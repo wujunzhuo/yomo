@@ -12,8 +12,9 @@ use tracing::Instrument;
 
 use crate::metadata_mgr::MetadataMgr;
 use crate::model_api_provider::{
-    AudioSpeechUsage, AudioTranscriptionsUsage, EmbeddingsUsage, ImagesUsage, MessagesUsage,
-    ProviderRegistry, ProxyBody, ProxyRequest, RerankUsage, ResponsesUsage, SelectionError, Usage,
+    AudioSpeechUsage, AudioTranscriptionsUsage, EmbeddingsUsage, GenerateContentUsage, ImagesUsage,
+    MessagesUsage, ProviderBody, ProviderRegistry, ProviderRequest, RerankUsage, ResponsesUsage,
+    SelectionError, Usage,
 };
 use crate::openai_http_mapping::openai_error_response;
 use crate::usage_handler::UsageHandler;
@@ -39,6 +40,7 @@ impl<A, M> Clone for ModelApiHandlerState<A, M> {
 enum EndpointKind {
     Messages,
     Responses,
+    GenerateContent,
     Embeddings,
     Rerank,
     AudioSpeech,
@@ -57,6 +59,7 @@ where
     M: Send + Sync + fmt::Debug + Clone + 'static,
 {
     let endpoint_path = format!("/{path}");
+    let requested_model_from_path = parse_generate_content_model(&endpoint_path);
     let Some(kind) = resolve_endpoint_kind(&endpoint_path) else {
         return openai_error_response(
             StatusCode::NOT_FOUND,
@@ -64,12 +67,28 @@ where
             Some("invalid_request_error"),
         );
     };
-    handle_endpoint(kind, &endpoint_path, state, headers, body).await
+    let selection_endpoint = if matches!(kind, EndpointKind::GenerateContent) {
+        "/models/:generateContent"
+    } else {
+        endpoint_path.as_str()
+    };
+    handle_endpoint(
+        kind,
+        &endpoint_path,
+        selection_endpoint,
+        requested_model_from_path,
+        state,
+        headers,
+        body,
+    )
+    .await
 }
 
 async fn handle_endpoint<A, M>(
     kind: EndpointKind,
     endpoint_path: &str,
+    selection_endpoint: &str,
+    requested_model_from_path: Option<String>,
     state: ModelApiHandlerState<A, M>,
     headers: HeaderMap,
     body: Bytes,
@@ -93,7 +112,7 @@ where
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(|value| value.to_string());
-    let (requested_model, is_stream) = match parse_request_metadata(&content_type, &body).await {
+    let (request_model, is_stream) = match parse_request_metadata(&content_type, &body).await {
         Ok(metadata) => metadata,
         Err(err) => {
             error!("model api request parse failed: {err} trace_id={trace_id}");
@@ -104,10 +123,11 @@ where
             );
         }
     };
+    let requested_model = requested_model_from_path.or(request_model);
 
     let provider_entry = match state
         .provider_registry
-        .select(endpoint_path, requested_model.as_deref(), &metadata)
+        .select(selection_endpoint, requested_model.as_deref(), &metadata)
     {
         Ok(provider_entry) => provider_entry,
             Err(SelectionError::ModelNotSupported) => {
@@ -130,7 +150,7 @@ where
         endpoint_path, provider_entry.model_id, is_stream, trace_id, metadata
     );
 
-    let proxy_request = ProxyRequest {
+    let provider_request = ProviderRequest {
         method: Method::POST,
         endpoint_path: endpoint_path.to_string(),
         headers: headers.clone(),
@@ -141,7 +161,7 @@ where
 
     let response = match provider_entry
         .provider
-        .proxy(proxy_request)
+        .execute(provider_request)
         .instrument(root_span.clone())
         .await
     {
@@ -165,7 +185,7 @@ where
     }
 
     let response = match response.body {
-        ProxyBody::Full(payload) => {
+        ProviderBody::Full(payload) => {
             let request_id = parse_request_id(&payload).unwrap_or_default();
             if let Some(usage) = parse_usage(kind, &payload) {
                 if let Ok(usage_value) = serde_json::to_value(usage) {
@@ -194,7 +214,7 @@ where
             }
             builder.body(Body::from(payload)).expect("build response")
         }
-        ProxyBody::Stream(stream) => builder
+        ProviderBody::Stream(stream) => builder
             .body(Body::from_stream(stream))
             .expect("build response"),
     };
@@ -267,37 +287,58 @@ fn parse_multipart_boundary(content_type: &str) -> Option<String> {
 
 fn parse_usage(kind: EndpointKind, payload: &Bytes) -> Option<Usage> {
     let value: Value = serde_json::from_slice(payload).ok()?;
-    let usage_value = value.get("usage").cloned()?;
     match kind {
-        EndpointKind::Messages => parse_usage_value::<MessagesUsage>(Some(usage_value.clone()))
+        EndpointKind::Messages => {
+            let usage_value = value.get("usage").cloned()?;
+            parse_usage_value::<MessagesUsage>(Some(usage_value.clone()))
             .map(Usage::Messages)
             .or_else(|| {
                 Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
                     raw: usage_value,
                 }))
-            }),
-        EndpointKind::Responses => parse_usage_value::<ResponsesUsage>(Some(usage_value.clone()))
+            })
+        }
+        EndpointKind::Responses => {
+            let usage_value = value.get("usage").cloned()?;
+            parse_usage_value::<ResponsesUsage>(Some(usage_value.clone()))
             .map(Usage::Responses)
             .or_else(|| {
                 Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
                     raw: usage_value,
                 }))
-            }),
-        EndpointKind::Embeddings => parse_usage_value::<EmbeddingsUsage>(Some(usage_value.clone()))
+            })
+        }
+        EndpointKind::GenerateContent => {
+            parse_usage_value::<GenerateContentUsage>(value.get("usageMetadata").cloned())
+                .map(Usage::GenerateContent)
+                .or_else(|| {
+                    Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
+                        raw: value,
+                    }))
+                })
+        }
+        EndpointKind::Embeddings => {
+            let usage_value = value.get("usage").cloned()?;
+            parse_usage_value::<EmbeddingsUsage>(Some(usage_value.clone()))
             .map(Usage::Embeddings)
             .or_else(|| {
                 Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
                     raw: usage_value,
                 }))
-            }),
-        EndpointKind::Rerank => parse_usage_value::<RerankUsage>(Some(usage_value.clone()))
+            })
+        }
+        EndpointKind::Rerank => {
+            let usage_value = value.get("usage").cloned()?;
+            parse_usage_value::<RerankUsage>(Some(usage_value.clone()))
             .map(Usage::Rerank)
             .or_else(|| {
                 Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
                     raw: usage_value,
                 }))
-            }),
+            })
+        }
         EndpointKind::AudioSpeech => {
+            let usage_value = value.get("usage").cloned()?;
             parse_usage_value::<AudioSpeechUsage>(Some(usage_value.clone()))
                 .map(Usage::AudioSpeech)
                 .or_else(|| {
@@ -307,6 +348,7 @@ fn parse_usage(kind: EndpointKind, payload: &Bytes) -> Option<Usage> {
                 })
         }
         EndpointKind::AudioTranscriptions => {
+            let usage_value = value.get("usage").cloned()?;
             parse_usage_value::<AudioTranscriptionsUsage>(Some(usage_value.clone()))
                 .map(Usage::AudioTranscriptions)
                 .or_else(|| {
@@ -315,13 +357,16 @@ fn parse_usage(kind: EndpointKind, payload: &Bytes) -> Option<Usage> {
                     }))
                 })
         }
-        EndpointKind::Images => parse_usage_value::<ImagesUsage>(Some(usage_value.clone()))
+        EndpointKind::Images => {
+            let usage_value = value.get("usage").cloned()?;
+            parse_usage_value::<ImagesUsage>(Some(usage_value.clone()))
             .map(Usage::Images)
             .or_else(|| {
                 Some(Usage::Unknown(crate::model_api_provider::UnknownUsage {
                     raw: usage_value,
                 }))
-            }),
+            })
+        }
     }
 }
 
@@ -345,8 +390,23 @@ fn resolve_endpoint_kind(endpoint: &str) -> Option<EndpointKind> {
         "/audio/transcriptions" => Some(EndpointKind::AudioTranscriptions),
         "/images/generations" => Some(EndpointKind::Images),
         "/images/edits" => Some(EndpointKind::Images),
-        _ => None,
+        _ => {
+            if parse_generate_content_model(endpoint).is_some() {
+                Some(EndpointKind::GenerateContent)
+            } else {
+                None
+            }
+        }
     }
+}
+
+fn parse_generate_content_model(endpoint: &str) -> Option<String> {
+    endpoint
+        .strip_prefix("/models/")
+        .and_then(|value| value.strip_suffix(":generateContent"))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 pub async fn build_model_api(
