@@ -1,5 +1,5 @@
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -319,11 +319,19 @@ pub struct ChatCompletionChoice {
 pub struct ChatCompletionMessage {
     pub role: Role,
     pub content: Option<Content>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     pub annotations: Vec<Value>,
     pub refusal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+}
+
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -408,4 +416,23 @@ pub struct ErrorDetail {
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub param: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_completion_message_allows_null_annotations() {
+        let message = r#"{"role":"assistant","content":null,"annotations":null,"refusal":null,"tool_calls":null}"#;
+        let parsed: ChatCompletionMessage = serde_json::from_str(message).expect("parse message");
+        assert!(parsed.annotations.is_empty());
+    }
+
+    #[test]
+    fn chat_completion_message_defaults_missing_annotations() {
+        let message = r#"{"role":"assistant","content":null,"refusal":null,"tool_calls":null}"#;
+        let parsed: ChatCompletionMessage = serde_json::from_str(message).expect("parse message");
+        assert!(parsed.annotations.is_empty());
+    }
 }
