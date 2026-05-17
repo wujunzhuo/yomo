@@ -7,7 +7,7 @@ use crate::tool_invoker::ToolInvoker;
 use crate::types::{BodyFormat, RequestHeaders, ToolRequest};
 use futures_core::Stream;
 use futures_util::{StreamExt, future::join_all};
-use log::{error, info};
+use log::{debug, error, info};
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::trace::{Span as OtelSpan, Status, Tracer};
@@ -175,6 +175,8 @@ where
             request.tool_choice = None;
         }
 
+        log_round_request(call_count + 1, false, &request, &trace_id);
+
         let mut response = provider.complete(request.clone()).await?;
         response.usage = config.handle_usage(response.usage.raw.clone(), response.usage);
         let usage_handler = Arc::clone(&config.usage_handler);
@@ -240,6 +242,7 @@ where
             next_messages.push(build_assistant_tool_call_message(
                 &request_id,
                 &server_calls,
+                Some(response.output_text.clone()),
             ));
             next_messages.extend(
                 build_tool_messages::<M>(
@@ -292,6 +295,8 @@ where
             request.tool_choice = None;
             }
 
+            log_round_request(call_count + 1, true, &request, &trace_id);
+
             let mut provider_stream = provider.stream(request.clone()).await?;
 
             let usage_offset = total_usage.clone();
@@ -302,15 +307,19 @@ where
             let mut finish_reason = None;
             let mut saw_tool_call = false;
             let mut emitted_client_tool = false;
+            let mut assistant_reasoning_content = String::new();
             let mut request_id: Option<String> = None;
 
             while let Some(item) = provider_stream.next().await {
                 let event = item?;
                 match &event {
+                    UnifiedEvent::MessageDelta { id, delta } => {
+                        request_id = Some(id.clone());
+                        assistant_reasoning_content.push_str(delta);
+                    }
                     UnifiedEvent::ResponseCreated { id, .. }
                     | UnifiedEvent::ResponseInProgress { id, .. }
                     | UnifiedEvent::MessageStart { id, .. }
-                    | UnifiedEvent::MessageDelta { id, .. }
                     | UnifiedEvent::MessageStop { id, .. } => {
                         request_id = Some(id.clone());
                     }
@@ -524,7 +533,11 @@ where
             let request_id = request.model.clone();
             let tool_messages = async {
                 let mut tool_messages = Vec::new();
-                tool_messages.push(build_assistant_tool_call_message(&request_id, &server_calls));
+                tool_messages.push(build_assistant_tool_call_message(
+                    &request_id,
+                    &server_calls,
+                    Some(assistant_reasoning_content.clone()),
+                ));
                 tool_messages.extend(
                     build_tool_messages::<M>(
                         &request_id,
@@ -730,6 +743,7 @@ where
             Ok(Message {
                 role: Role::Tool,
                 content: Content::Text(content),
+                reasoning_content: None,
                 tool_call_id: Some(tool_call_id),
                 tool_calls: None,
             })
@@ -746,7 +760,11 @@ where
     Ok(messages)
 }
 
-fn build_assistant_tool_call_message(request_id: &str, calls: &[ProviderToolCall]) -> Message {
+fn build_assistant_tool_call_message(
+    request_id: &str,
+    calls: &[ProviderToolCall],
+    reasoning_content: Option<String>,
+) -> Message {
     let tool_calls = calls
         .iter()
         .enumerate()
@@ -767,6 +785,7 @@ fn build_assistant_tool_call_message(request_id: &str, calls: &[ProviderToolCall
     Message {
         role: Role::Assistant,
         content: Content::Text("Tool call".to_string()),
+        reasoning_content,
         tool_call_id: None,
         tool_calls: Some(tool_calls),
     }
@@ -876,5 +895,19 @@ fn log_llm_call(
     info!(
         "llm.call; trace_id={} round={} model={} streaming={} tool_count={} prompt_tokens={} completion_tokens={}",
         trace_id, round, model, streaming, tool_count, usage.input_tokens, usage.output_tokens
+    );
+}
+
+fn log_round_request(round: usize, streaming: bool, request: &ChatCompletionRequest, trace_id: &str) {
+    let messages_json = serde_json::to_string(&request.messages).unwrap_or_else(|_| "[]".to_string());
+    debug!(
+        "llm.request; trace_id={} round={} model={} streaming={} tool_choice={:?} messages_count={} messages={}",
+        trace_id,
+        round,
+        request.model,
+        streaming,
+        request.tool_choice,
+        request.messages.len(),
+        messages_json
     );
 }

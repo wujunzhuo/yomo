@@ -5,6 +5,7 @@ use crate::serve_config::ConfigError;
 use crate::serve_config::ProviderConfig;
 use crate::llm_provider::Provider;
 use crate::llm_provider::openai_compatible::build_openai_compatible_provider;
+use crate::llm_provider::tokenhub::build_tokenhub_provider;
 use crate::llm_provider::vllm_deepseek::build_vllm_deepseek_provider;
 use crate::llm_provider::vertexai::build_vertexai_provider;
 use crate::llm_provider::selection::SelectionStrategy;
@@ -55,6 +56,7 @@ impl<M> ProviderRegistry<M> {
                 "openai-compatible" => {
                     Arc::new(build_openai_compatible_provider(&item.params)?)
                 }
+                "tokenhub" => Arc::new(build_tokenhub_provider(&item.params)?),
                 "vllm_deepseek" => Arc::new(build_vllm_deepseek_provider(&item.params)?),
                 "vertexai" => Arc::new(build_vertexai_provider(&item.params)?),
                 other => return Err(ConfigError::UnknownProviderType(other.to_string())),

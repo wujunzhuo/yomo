@@ -15,6 +15,9 @@ llm_providers:
   #   required params: model, api_key, base_url
   # - vllm_deepseek: vllm deepseek specialized provider.
   #   required params: model, api_key, base_url
+  # - tokenhub: Tencent TokenHub /v1/chat/completions provider.
+  #   required params: model, api_key
+  #   optional params: base_url (default https://tokenhub.tencentmaas.com/v1)
   # - vertexai: Google Vertex AI generateContent/streamGenerateContent.
   #   required params: model, project_id, location, credentials_file
   # Common fields:
@@ -34,6 +37,12 @@ llm_providers:
   #     model: "DeepSeek-V4-Flash"
   #     api_key: ""
   #     base_url: "http://127.0.0.1:8000/v1"
+  # - type: "tokenhub"
+  #   model_id: "deepseek-v4-flash"
+  #   params:
+  #     model: "deepseek-v4-flash"
+  #     api_key: ""
+  #     base_url: "https://tokenhub.tencentmaas.com/v1"
   # - type: "vertexai"
   #   model_id: "gemini-2.5-flash"
   #   params:

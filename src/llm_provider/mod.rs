@@ -1,4 +1,5 @@
 pub mod openai_compatible;
+pub mod tokenhub;
 pub mod vllm_deepseek;
 pub mod vertexai;
 pub mod registry;

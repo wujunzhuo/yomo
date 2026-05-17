@@ -121,6 +121,8 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ThinkingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_template_kwargs: Option<HashMap<String, Value>>,
@@ -148,6 +150,22 @@ pub struct ChatCompletionRequest {
     pub metadata: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingConfig {
+    /// TokenHub deep thinking parameter.
+    ///
+    /// Reference: https://cloud.tencent.com/document/product/1823/131208
+    #[serde(rename = "type")]
+    pub kind: ThinkingType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingType {
+    Enabled,
+    Disabled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,6 +217,8 @@ impl Role {
 pub struct Message {
     pub role: Role,
     pub content: Content,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
