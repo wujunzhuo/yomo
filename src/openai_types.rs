@@ -18,17 +18,23 @@ pub struct Usage {
     pub completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PromptTokensDetails {
+    #[serde(default)]
     pub audio_tokens: i32,
+    #[serde(default)]
     pub cached_tokens: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CompletionTokensDetails {
+    #[serde(default)]
     pub accepted_prediction_tokens: i32,
+    #[serde(default)]
     pub audio_tokens: i32,
+    #[serde(default)]
     pub reasoning_tokens: i32,
+    #[serde(default)]
     pub rejected_prediction_tokens: i32,
 }
 
