@@ -107,9 +107,7 @@ impl TlsProvider {
     ) -> Result<Self, RustlsError> {
         rustls_crate::crypto::aws_lc_rs::default_provider()
             .install_default()
-            .map_err(|e| {
-                RustlsError::General(format!("failed to install default provider: {:?}", e))
-            })?;
+            .ok();
 
         Ok(Self {
             ca_cert: if let Some(buf) = ca_cert_pem {
