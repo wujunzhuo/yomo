@@ -178,3 +178,170 @@ fn normalize_reasoning_effort(request: &mut ChatCompletionRequest) {
 fn map_openai_error(err: ClientError) -> ProviderError {
     ProviderError::Internal(err.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openai_types::{
+        Content, ImageUrl, Message, ThinkingConfig, ThinkingType, ToolCall, ToolCallFunction,
+    };
+    use serde_json::json;
+
+    fn request_with_messages(messages: Vec<Message>) -> ChatCompletionRequest {
+        ChatCompletionRequest {
+            model: "deepseek-v4-flash".to_string(),
+            messages,
+            n: None,
+            temperature: None,
+            top_p: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            logprobs: None,
+            top_logprobs: None,
+            modalities: None,
+            audio: None,
+            max_completion_tokens: None,
+            stop: None,
+            response_format: None,
+            thinking: None,
+            reasoning_effort: None,
+            chat_template_kwargs: None,
+            prediction: None,
+            verbosity: None,
+            tools: None,
+            tool_choice: None,
+            allowed_tools: None,
+            parallel_tool_calls: None,
+            service_tier: None,
+            seed: None,
+            stream: None,
+            stream_options: None,
+            metadata: None,
+            agent_context: None,
+        }
+    }
+
+    fn user_text_message(text: &str) -> Message {
+        Message {
+            role: Role::User,
+            content: Content::Text(text.to_string()),
+            reasoning_content: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }
+    }
+
+    #[test]
+    fn normalize_reasoning_effort_sets_chat_template_kwargs() {
+        let mut request = request_with_messages(vec![user_text_message("hello")]);
+        request.reasoning_effort = Some("high".to_string());
+
+        normalize_reasoning_effort(&mut request);
+
+        let kwargs = request.chat_template_kwargs.expect("chat_template_kwargs");
+        assert_eq!(kwargs.get("thinking"), Some(&Value::Bool(true)));
+        assert_eq!(kwargs.get("reasoning_effort"), Some(&Value::String("high".to_string())));
+    }
+
+    #[test]
+    fn normalize_reasoning_effort_keeps_existing_thinking_kwargs() {
+        let mut request = request_with_messages(vec![user_text_message("hello")]);
+        request.reasoning_effort = Some("medium".to_string());
+        request.chat_template_kwargs = Some(HashMap::from([(
+            "thinking".to_string(),
+            Value::Bool(false),
+        )]));
+
+        normalize_reasoning_effort(&mut request);
+
+        let kwargs = request.chat_template_kwargs.expect("chat_template_kwargs");
+        assert_eq!(kwargs.get("thinking"), Some(&Value::Bool(false)));
+        assert_eq!(kwargs.get("reasoning_effort"), None);
+    }
+
+    #[test]
+    fn flatten_assistant_text_content_merges_text_parts() {
+        let assistant = Message {
+            role: Role::Assistant,
+            content: Content::Parts(vec![
+                crate::openai_types::ContentPart::Text {
+                    text: "hello ".to_string(),
+                },
+                crate::openai_types::ContentPart::Text {
+                    text: "world".to_string(),
+                },
+            ]),
+            reasoning_content: None,
+            tool_call_id: None,
+            tool_calls: Some(vec![ToolCall {
+                id: Some("call_1".to_string()),
+                r#type: Some("function".to_string()),
+                function: ToolCallFunction {
+                    name: "noop".to_string(),
+                    arguments: "{}".to_string(),
+                    description: None,
+                },
+            }]),
+        };
+        let mut request = request_with_messages(vec![assistant]);
+
+        flatten_assistant_text_content(&mut request);
+
+        match &request.messages[0].content {
+            Content::Text(text) => assert_eq!(text, "hello world"),
+            _ => panic!("assistant content should be flattened to text"),
+        }
+    }
+
+    #[test]
+    fn ensure_no_image_parts_returns_error() {
+        let request = request_with_messages(vec![Message {
+            role: Role::User,
+            content: Content::Parts(vec![crate::openai_types::ContentPart::Image {
+                image_url: ImageUrl {
+                    url: "https://example.com/a.png".to_string(),
+                    detail: None,
+                },
+            }]),
+            reasoning_content: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }]);
+
+        let err = ensure_no_image_parts(&request).expect_err("should reject image parts");
+        assert!(err
+            .to_string()
+            .contains("deepseek-v4-flash does not support image_url messages"));
+    }
+
+    #[test]
+    fn normalize_request_combines_compatibility_steps() {
+        let assistant = Message {
+            role: Role::Assistant,
+            content: Content::Parts(vec![crate::openai_types::ContentPart::Text {
+                text: "ok".to_string(),
+            }]),
+            reasoning_content: None,
+            tool_call_id: None,
+            tool_calls: None,
+        };
+        let mut request = request_with_messages(vec![assistant]);
+        request.reasoning_effort = Some("max".to_string());
+        request.thinking = Some(ThinkingConfig {
+            kind: ThinkingType::Disabled,
+        });
+        request.chat_template_kwargs = Some(HashMap::from([(
+            "temperature_hint".to_string(),
+            json!("ignored by normalize_reasoning_effort overwrite"),
+        )]));
+
+        let normalized = normalize_request(request).expect("normalize request");
+
+        assert!(matches!(&normalized.messages[0].content, Content::Text(text) if text == "ok"));
+        let kwargs = normalized
+            .chat_template_kwargs
+            .expect("chat_template_kwargs set by reasoning effort");
+        assert_eq!(kwargs.get("thinking"), Some(&Value::Bool(true)));
+        assert_eq!(kwargs.get("reasoning_effort"), Some(&Value::String("max".to_string())));
+    }
+}
